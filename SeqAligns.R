@@ -17,8 +17,7 @@ open_prog<-winProgressBar(title="SeqAlign Super Pro 9000",
 package.list<-c("this.path",
                 "tcltk",
                 "stringr",
-                "BiocManager",
-                "tools")
+                "BiocManager")
 n_pack<-length(package.list)
 for(i in 1:length(package.list)){
   tryCatch(find.package(package.list[i]),
@@ -28,29 +27,27 @@ for(i in 1:length(package.list)){
            })
 }
 
-setWinProgressBar(open_prog,value=35,label="Loading this.path...")
+setWinProgressBar(open_prog,value=25,label="Loading this.path...")
 library(this.path)
-setWinProgressBar(open_prog,value=45,label="Loading tcltk...")
+setWinProgressBar(open_prog,value=35,label="Loading tcltk...")
 library(tcltk)
-setWinProgressBar(open_prog,value=55,label="Loading stringr...")
+setWinProgressBar(open_prog,value=45,label="Loading stringr...")
 library(stringr)
-setWinProgressBar(open_prog,value=65,label="Loading BiocManager...")
+setWinProgressBar(open_prog,value=55,label="Loading BiocManager...")
 library(BiocManager)
-setWinProgressBar(open_prog,value=75,label="Loading tools...")
-library(tools)
 
 #Install BiocManager packages
-setWinProgressBar(open_prog,value=85,label="Installing BiocManager packages...")
+setWinProgressBar(open_prog,value=65,label="Installing BiocManager packages...")
 bioc.packages<-c("Rsubread")
 for(i in 1:length(bioc.packages)){
   tryCatch(find.package(bioc.packages[i]),
            error=function(e) {
-             setWinProgressBar(open_prog,value=85,label=paste("Installing ",bioc.packages[i],"...",sep=""))
+             setWinProgressBar(open_prog,value=65,label=paste("Installing ",bioc.packages[i],"...",sep=""))
              BiocManager::install(bioc.packages[i])
            })
 }
 
-setWinProgressBar(open_prog,value=95,label="Loading Rsubread...")
+setWinProgressBar(open_prog,value=75,label="Loading Rsubread...")
 library(Rsubread)
 
 close(open_prog)
