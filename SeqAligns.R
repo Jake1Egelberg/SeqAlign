@@ -17,7 +17,8 @@ open_prog<-winProgressBar(title="SeqAlign Super Pro 9000",
 package.list<-c("this.path",
                 "tcltk",
                 "stringr",
-                "BiocManager")
+                "BiocManager",
+                "tools")
 n_pack<-length(package.list)
 for(i in 1:length(package.list)){
   tryCatch(find.package(package.list[i]),
@@ -35,19 +36,21 @@ setWinProgressBar(open_prog,value=55,label="Loading stringr...")
 library(stringr)
 setWinProgressBar(open_prog,value=65,label="Loading BiocManager...")
 library(BiocManager)
+setWinProgressBar(open_prog,value=75,label="Loading tools...")
+library(tools)
 
 #Install BiocManager packages
-setWinProgressBar(open_prog,value=75,label="Installing BiocManager packages...")
+setWinProgressBar(open_prog,value=85,label="Installing BiocManager packages...")
 bioc.packages<-c("Rsubread")
 for(i in 1:length(bioc.packages)){
   tryCatch(find.package(bioc.packages[i]),
            error=function(e) {
-             setWinProgressBar(open_prog,value=75,label=paste("Installing ",bioc.packages[i],"...",sep=""))
+             setWinProgressBar(open_prog,value=85,label=paste("Installing ",bioc.packages[i],"...",sep=""))
              BiocManager::install(bioc.packages[i])
            })
 }
 
-setWinProgressBar(open_prog,value=85,label="Loading Rsubread...")
+setWinProgressBar(open_prog,value=95,label="Loading Rsubread...")
 library(Rsubread)
 
 close(open_prog)
@@ -162,7 +165,7 @@ display_ref<-function(){
 
 select_ref<-function(){
   .GlobalEnv$ref_seq<-tk_choose.files(default=paste(exp_dir,"/REFERENCE_SEQUENCE",sep=""),multi=FALSE,
-                                      filters=matrix(c("FASTA",".fa","All files","*"),2,2,byrow=TRUE))
+                                      filters=matrix(c("FASTA",".fa","TXT",".txt","All files","*"),2,2,byrow=TRUE))
   display_ref()
   
   #Build index for reference sequence
@@ -206,7 +209,7 @@ display_reads<-function(){
 
 select_reads<-function(){
   .GlobalEnv$sel_reads<-tk_choose.files(default=paste(exp_dir,"/READS",sep=""),
-                                        filters=matrix(c("FASTA",".fa","All files","*"),2,2,byrow=TRUE))
+                                        filters=matrix(c("TXT",".txt","FASTA",".fa","All files","*"),3,2,byrow=TRUE))
   display_reads()
   
   #Update parms
@@ -230,11 +233,11 @@ tkgrid(open_exp,row=2,column=1,columnspan=2,pady=5)
 exp_display<-tklabel(frm,text="")
 tkgrid(exp_display,row=3,column=1,columnspan=2,pady=5)
 
-sel_ref_seq<-tkbutton(frm,text="Select reference sequence (.fa file)",command=select_ref,state="disabled")
+sel_ref_seq<-tkbutton(frm,text="Select reference sequence (FASTA)",command=select_ref,state="disabled")
 tkgrid(sel_ref_seq,row=4,column=1,pady=5,columnspan=2)
 ref_display<-tklabel(frm,text="")
 tkgrid(ref_display,row=5,column=1,pady=6,columnspan=2)
-sel_reads_var<-tkbutton(frm,text="Select reads to be aligned (.fa files)",command=select_reads,state="disabled")
+sel_reads_var<-tkbutton(frm,text="Select reads to be aligned (FASTA)",command=select_reads,state="disabled")
 tkgrid(sel_reads_var,row=6,column=1,pady=5,columnspan=2)
 sel_reads_dis<-tklabel(frm,text="\n\n\n")
 tkgrid(sel_reads_dis,row=7,column=1,pady=5,columnspan=2)
