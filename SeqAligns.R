@@ -117,7 +117,7 @@ open_exp_fun<-function(){
     
   } else if(exp_opt=="Open existing experiment"){
     
-    cur_dirs<-list.dirs(dir,recursive = FALSE)
+    cur_dirs<-list.dirs(dir,recursive = FALSE)[-which(list.dirs(dir,recursive = FALSE,full.names = FALSE)=="R-4.2.1")]
     cur_dirs_cur<-gsub(paste(dir,"/",sep=""),"",cur_dirs)
     .GlobalEnv$selected_exp<-tk_select.list(choices=cur_dirs_cur,multiple=FALSE)
     .GlobalEnv$exp_dir<-paste(dir,"/",selected_exp,sep="")
@@ -242,10 +242,3 @@ align_reads<-tkbutton(frm,text="Align reads",state="disabled",command=align_fun)
 tkgrid(align_reads,row=8,column=1,pady=5,columnspan=2)
 
 tkwait.window(gui)
-
-
-
-
-
-
-
