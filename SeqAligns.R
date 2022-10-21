@@ -65,8 +65,11 @@ close(open_prog)
 #**********************************************
 
 .GlobalEnv$dir<-this.dir()
+.GlobalEnv$skip_subread<-tclVar(0)
 
 align_fun<-function(){
+  
+  .GlobalEnv$skip_subread_val<-tclvalue(skip_subread)
   
   if(is.na(ref_seq)==FALSE&&length(sel_reads)>=1&&is.na(sel_reads)==FALSE){
   
@@ -76,32 +79,38 @@ align_fun<-function(){
                          label=paste("Aligning...", sep=""),
                          min=0,max=100,width=300,initial=prog_val)
     
-    alignment_output<-data.frame()
-    for(i in 1:length(sel_reads)){
-      .GlobalEnv$x<-sel_reads[i]
+    if(skip_subread_val=="0"){
+      alignment_output<-data.frame()
+      for(i in 1:length(sel_reads)){
+        .GlobalEnv$x<-sel_reads[i]
+        
+        prog_val<-prog_val+prog_inc
+        setWinProgressBar(prog,value=prog_val,label=paste("Aligning ",gsub(paste(exp_dir,"/",sep=""),"",x),"...", sep=""))
+        
+        aligned_reads<-align(index=paste(exp_dir,"/refseq",sep=""),readfile1=x)
+        df<-data.frame(Read=gsub(".subread.BAM","",colnames(aligned_reads)),
+                       Total_reads=aligned_reads[1,],
+                       Mapped_reads=aligned_reads[2,],
+                       Uniquely_mapped_reads=aligned_reads[3,],
+                       Multi_mapping_reads=aligned_reads[4,],
+                       Unmapped_reads=aligned_reads[5,],
+                       Indels=aligned_reads[6,])
+        alignment_output<-rbind(alignment_output,df)
+      }
+      .GlobalEnv$alignment_output<-alignment_output
       
-      prog_val<-prog_val+prog_inc
-      setWinProgressBar(prog,value=prog_val,label=paste("Aligning ",gsub(paste(exp_dir,"/",sep=""),"",x),"...", sep=""))
+      #Save alignment output
+      setwd(exp_dir)
+      write.csv(alignment_output,"ALIGNMENT_OUTPUT.csv",row.names=FALSE)
       
-      aligned_reads<-align(index=paste(exp_dir,"/refseq",sep=""),readfile1=x)
-      df<-data.frame(Read=gsub(".subread.BAM","",colnames(aligned_reads)),
-                     Total_reads=aligned_reads[1,],
-                     Mapped_reads=aligned_reads[2,],
-                     Uniquely_mapped_reads=aligned_reads[3,],
-                     Multi_mapping_reads=aligned_reads[4,],
-                     Unmapped_reads=aligned_reads[5,],
-                     Indels=aligned_reads[6,])
-      alignment_output<-rbind(alignment_output,df)
+      #Get unaligned/aligned reads
+      .GlobalEnv$unaligned_reads<-sel_reads[which(alignment_output$Unmapped_reads>0)]
+      .GlobalEnv$aligned_reads<-sel_reads[-which(sel_reads%in%unaligned_reads)]
+      
+    } else{
+      .GlobalEnv$aligned_reads<-sel_reads
     }
-    .GlobalEnv$alignment_output<-alignment_output
-    
-    #Save alignment output
-    setwd(exp_dir)
-    write.csv(alignment_output,"ALIGNMENT_OUTPUT.csv",row.names=FALSE)
-    
-    #Get unaligned reads
-    .GlobalEnv$unaligned_reads<-sel_reads[which(alignment_output$Unmapped_reads>0)]
-    
+
     #Generate plots
     setWinProgressBar(prog,value=90,label="Generating alignment metadata...")
     get_alignment()
@@ -163,6 +172,7 @@ open_exp_fun<-function(){
   tkconfigure(sel_ref_seq,state="normal")
   tkconfigure(sel_reads_var,state="normal")
   tkconfigure(align_reads,state="normal")
+  tkconfigure(skip_sub,state="normal")
   
   print(exp_dir)
   
@@ -233,7 +243,6 @@ select_reads<-function(){
 get_alignment<-function(){
   
   align_meta<-data.frame()
-  .GlobalEnv$aligned_reads<-sel_reads[-which(sel_reads%in%unaligned_reads)]
   for(i in 1:length(aligned_reads)){
     
     dir_ref_seq<-toupper(paste(read.delim(ref_seq)[,1],collapse=""))
@@ -298,15 +307,19 @@ get_alignment<-function(){
       setwd(exp_dir)
       write.csv(misaligned_df,paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),"_ALIGNMENT.csv",sep=""),row.names = FALSE)
       
-      ggplot(misaligned_df,aes(x=as.numeric(Nucleotide),y=Aligned))+
-        geom_point(size=1,col=ifelse(misaligned_df$Aligned=="Y","darkgreen","red"))+
+      ggplot(misaligned_df,aes(x=as.numeric(Nucleotide),y=1))+
+        geom_point(size=3,col=ifelse(misaligned_df$Aligned=="Y","darkgreen","red"))+
         scale_x_continuous(n.breaks=10)+
         xlab(paste("Nucleotide Position of ", long_seq,sep=""))+
         ylab("Alignment Status")+
         theme_bw()+
+        theme(axis.text.y = element_blank(),
+              axis.ticks.y = element_blank(),
+              panel.grid.major = element_blank(),
+              panel.grid.minor=element_blank())+
         ggtitle(paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i])," Alignment to Reference",sep=""))
       setwd(exp_dir)
-      ggsave(paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),"_PLOT.png",sep=""),width=7,height=5)
+      ggsave(paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),"_PLOT.png",sep=""),width=10,height=5)
       
     } else{
       aligned_successful<-"N"
@@ -327,7 +340,7 @@ get_alignment<-function(){
 }
 
 gui<-tktoplevel()
-tkwm.geometry(gui,"300x330")
+tkwm.geometry(gui,"300x360")
 tkwm.title(gui,"SeqAlign Super Pro 2000")
 frm<-tkframe(gui)
 tkgrid(frm,padx=30)
@@ -349,5 +362,7 @@ sel_reads_dis<-tklabel(frm,text="\n\n\n")
 tkgrid(sel_reads_dis,row=7,column=1,pady=5,columnspan=2)
 align_reads<-tkbutton(frm,text="Align reads",state="disabled",command=align_fun)
 tkgrid(align_reads,row=8,column=1,pady=5,columnspan=2)
+skip_sub<-tkcheckbutton(frm,text="Skip RSubread alignment?",variable=skip_subread,state="disabled")
+tkgrid(skip_sub,row=9,column=1,pady=5,columnspan=2)
 
 tkwait.window(gui)
