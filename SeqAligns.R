@@ -65,7 +65,7 @@ close(open_prog)
 #**********************************************
 
 .GlobalEnv$dir<-this.dir()
-.GlobalEnv$skip_subread<-tclVar(0)
+.GlobalEnv$skip_subread<-tclVar(1)
 
 align_fun<-function(){
   
@@ -262,15 +262,15 @@ get_alignment<-function(){
       aligned_successful<-"Y"
       
       if(length(read_cur)>str_count(dir_ref_seq)){
-        long_seq<-"Read"
-        short_seq<-"RefSeq"
+        long_seq<-gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i])
+        short_seq<-gsub(paste(exp_dir,"/",sep=""),"",ref_seq)
         short<-unlist(strsplit(dir_ref_seq,""))
         long<-read_cur
         seq_l<-length(read_cur)
         m_disp<-(mid_dig-start)
       } else{
-        long_seq<-"RefSeq"
-        short_seq<-"Read"
+        long_seq<-gsub(paste(exp_dir,"/",sep=""),"",ref_seq)
+        short_seq<-gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i])
         short<-read_cur
         long<-unlist(strsplit(dir_ref_seq,""))
         seq_l<-str_count(dir_ref_seq)
@@ -303,15 +303,19 @@ get_alignment<-function(){
         
       })
       misaligned_df<-bind_rows(misaligned)
-      perc_aligned<-round(length(which(misaligned_df$Aligned=="Y"))/nrow(misaligned_df)*100,1)
+      num_aligned<-length(which(misaligned_df$Aligned=="Y"))
+      total_num<-nrow(misaligned_df)
+      perc_aligned<-round((num_aligned/total_num)*100,1)
+      perc_aligned_short<-round((num_aligned/length(short))*100,1)
       setwd(exp_dir)
       write.csv(misaligned_df,paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),"_ALIGNMENT.csv",sep=""),row.names = FALSE)
       
       ggplot(misaligned_df,aes(x=as.numeric(Nucleotide),y=1))+
         geom_point(size=3,col=ifelse(misaligned_df$Aligned=="Y","darkgreen","red"))+
+        geom_text(aes(x=as.numeric(min(Nucleotide)),y=1),label=paste("% Aligned (",long_seq, ") = ",perc_aligned,"%\n",num_aligned,"/",nrow(misaligned_df)," nucleotides","\n% Aligned (",short_seq,")= ",perc_aligned_short,"%\n",num_aligned,"/",length(short)," nucleotides",sep=""),hjust=0,vjust=-1)+
         scale_x_continuous(n.breaks=10)+
         xlab(paste("Nucleotide Position of ", long_seq,sep=""))+
-        ylab("Alignment")+
+        ylab(paste("Alignment of ", long_seq,sep=""))+
         theme_bw()+
         theme(axis.text.y = element_blank(),
               axis.ticks.y = element_blank(),
@@ -324,12 +328,14 @@ get_alignment<-function(){
     } else{
       aligned_successful<-"N"
       perc_aligned<-"NA"
+      perc_aligned_short<-"NA"
       #tk_messageBox(message=paste(gsub(paste(exp_dir,"/",sep=""),"",sel_reads[i]), " did not align!",sep=""))
     }
     
     tmp_meta<-data.frame(Sequence=gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),
                          Alignment_Success=aligned_successful,
-                         Percent_Aligned=perc_aligned)
+                         Percent_Aligned_Long=perc_aligned,
+                         Percent_Aligned_Short=perc_aligned_short)
     align_meta<-rbind(align_meta,tmp_meta)
   }
   
