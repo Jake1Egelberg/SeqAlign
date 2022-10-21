@@ -17,7 +17,9 @@ open_prog<-winProgressBar(title="SeqAlign Super Pro 9000",
 package.list<-c("this.path",
                 "tcltk",
                 "stringr",
-                "BiocManager")
+                "BiocManager",
+                "ggplot2",
+                "dplyr")
 n_pack<-length(package.list)
 for(i in 1:length(package.list)){
   tryCatch(find.package(package.list[i]),
@@ -35,19 +37,23 @@ setWinProgressBar(open_prog,value=45,label="Loading stringr...")
 library(stringr)
 setWinProgressBar(open_prog,value=55,label="Loading BiocManager...")
 library(BiocManager)
+setWinProgressBar(open_prog,value=65,label="Loading ggplot2...")
+library(ggplot2)
+setWinProgressBar(open_prog,value=75,label="Loading dplyr...")
+library(dplyr)
 
 #Install BiocManager packages
-setWinProgressBar(open_prog,value=65,label="Installing BiocManager packages...")
+setWinProgressBar(open_prog,value=85,label="Installing BiocManager packages...")
 bioc.packages<-c("Rsubread")
 for(i in 1:length(bioc.packages)){
   tryCatch(find.package(bioc.packages[i]),
            error=function(e) {
-             setWinProgressBar(open_prog,value=65,label=paste("Installing ",bioc.packages[i],"...",sep=""))
+             setWinProgressBar(open_prog,value=85,label=paste("Installing ",bioc.packages[i],"...",sep=""))
              BiocManager::install(bioc.packages[i])
            })
 }
 
-setWinProgressBar(open_prog,value=75,label="Loading Rsubread...")
+setWinProgressBar(open_prog,value=95,label="Loading Rsubread...")
 library(Rsubread)
 
 close(open_prog)
@@ -91,12 +97,19 @@ align_fun<-function(){
     
     #Save alignment output
     setwd(exp_dir)
-    write.csv(alignment_output,"AlignmentOutput.csv",row.names=FALSE)
+    write.csv(alignment_output,"ALIGNMENT_OUTPUT.csv",row.names=FALSE)
+    
+    #Get unaligned reads
+    .GlobalEnv$unaligned_reads<-sel_reads[which(alignment_output$Unmapped_reads>0)]
+    
+    #Generate plots
+    setWinProgressBar(prog,value=90,label="Generating alignment metadata...")
+    get_alignment()
     
     close(prog)
     tk_messageBox(message="Alignment complete and saved to experiment directory!")
     
-    edit(alignment_output)
+    edit(align_meta)
     
   } else{
     tk_messageBox(message="Ensure you have selected one reference sequence and at least one read to align!")
@@ -215,6 +228,102 @@ select_reads<-function(){
   write.table(parms,file="Parms.txt",quote=FALSE,sep=",",eol="\n")
   
   print(sel_reads)
+}
+
+get_alignment<-function(){
+  
+  align_meta<-data.frame()
+  .GlobalEnv$aligned_reads<-sel_reads[-which(sel_reads%in%unaligned_reads)]
+  for(i in 1:length(aligned_reads)){
+    
+    dir_ref_seq<-toupper(paste(read.delim(ref_seq)[,1],collapse=""))
+    read_cur<-toupper(unlist(strsplit(read.delim(aligned_reads[i])[,1],"")))
+    
+    #Align midpoint of read to ref seq
+    mid_dig<-round(length(read_cur)/2,0)
+    mid_seq<-paste(read_cur[mid_dig:(mid_dig+10)],collapse="")
+    
+    #Get nucleotide of ref seq that aligns to midpoint of read
+    loc<-str_locate(dir_ref_seq,mid_seq)
+    start<-unname(loc[,1])
+    end<-unname(loc[,2])
+    
+    if(is.na(start)==FALSE&&is.na(end)==FALSE){
+      
+      aligned_successful<-"Y"
+      
+      if(length(read_cur)>str_count(dir_ref_seq)){
+        long_seq<-"Read"
+        short_seq<-"RefSeq"
+        short<-unlist(strsplit(dir_ref_seq,""))
+        long<-read_cur
+        seq_l<-length(read_cur)
+        m_disp<-(mid_dig-start)
+      } else{
+        long_seq<-"RefSeq"
+        short_seq<-"Read"
+        short<-read_cur
+        long<-unlist(strsplit(dir_ref_seq,""))
+        seq_l<-str_count(dir_ref_seq)
+        m_disp<-(start-mid_dig)
+      }
+      
+      #Create alignment
+      align_m<-matrix(nrow=3,ncol=seq_l)
+      rownames(align_m)<-c(long_seq,short_seq,"Aligned")
+      colnames(align_m)<-c(1:ncol(align_m))
+      align_m[1,]<-long
+      align_m[2,(m_disp+1):(length(short)+m_disp)]<-short
+      
+      #Identify misaligned nucleotides
+      misaligned<-lapply(1:seq_l,function(x){
+        
+        tmp<-align_m[,x]
+        tmp_rd<-unname(tmp[1])
+        tmp_ref<-unname(tmp[2])
+        if(tmp_rd==tmp_ref&&is.na(tmp_ref)==FALSE&&is.na(tmp_rd)==FALSE){
+          align_status<-"Y"
+        } else{
+          align_status<-"N"
+        }
+        
+        df<-data.frame(Nucleotide=x,
+                       Read=tmp_rd,
+                       Reference=tmp_ref,
+                       Aligned=align_status)
+        
+      })
+      misaligned_df<-bind_rows(misaligned)
+      perc_aligned<-round(length(which(misaligned_df$Aligned=="Y"))/nrow(misaligned_df)*100,1)
+      setwd(exp_dir)
+      write.csv(misaligned_df,paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),"_ALIGNMENT.csv",sep=""),row.names = FALSE)
+      
+      ggplot(misaligned_df,aes(x=as.numeric(Nucleotide),y=Aligned))+
+        geom_point(size=1,col=ifelse(misaligned_df$Aligned=="Y","darkgreen","red"))+
+        scale_x_continuous(n.breaks=10)+
+        xlab(paste("Nucleotide Position of ", long_seq,sep=""))+
+        ylab("Alignment Status")+
+        theme_bw()+
+        ggtitle(paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i])," Alignment to Reference",sep=""))
+      setwd(exp_dir)
+      ggsave(paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),"_PLOT.png",sep=""),width=7,height=5)
+      
+    } else{
+      aligned_successful<-"N"
+      perc_aligned<-"NA"
+      #tk_messageBox(message=paste(gsub(paste(exp_dir,"/",sep=""),"",sel_reads[i]), " did not align!",sep=""))
+    }
+    
+    tmp_meta<-data.frame(Sequence=gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),
+                         Alignment_Success=aligned_successful,
+                         Percent_Aligned=perc_aligned)
+    align_meta<-rbind(align_meta,tmp_meta)
+  }
+  
+  .GlobalEnv$align_meta<-align_meta
+  setwd(exp_dir)
+  write.csv(align_meta,"ALIGNMENT_METADATA.csv",row.names = FALSE)
+ 
 }
 
 gui<-tktoplevel()
