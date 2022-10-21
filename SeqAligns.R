@@ -311,7 +311,7 @@ get_alignment<-function(){
         geom_point(size=3,col=ifelse(misaligned_df$Aligned=="Y","darkgreen","red"))+
         scale_x_continuous(n.breaks=10)+
         xlab(paste("Nucleotide Position of ", long_seq,sep=""))+
-        ylab("Alignment Status")+
+        ylab("Alignment")+
         theme_bw()+
         theme(axis.text.y = element_blank(),
               axis.ticks.y = element_blank(),
