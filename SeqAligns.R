@@ -66,6 +66,9 @@ close(open_prog)
 
 .GlobalEnv$dir<-this.dir()
 .GlobalEnv$skip_subread<-tclVar(1)
+.GlobalEnv$align_method_var<-tclVar("Midpoint")
+.GlobalEnv$n_cross_vals<-10
+.GlobalEnv$n_samples<-10
 
 align_fun<-function(){
   
@@ -242,103 +245,269 @@ select_reads<-function(){
 
 get_alignment<-function(){
   
+  #Get alignment method
+  .GlobalEnv$align_method_val<-tclvalue(align_method_var)
+  
   align_meta<-data.frame()
   for(i in 1:length(aligned_reads)){
     
     dir_ref_seq<-toupper(paste(read.delim(ref_seq)[,1],collapse=""))
-    read_cur<-toupper(unlist(strsplit(read.delim(aligned_reads[i])[,1],"")))
+    read_cur<-paste(toupper(read.delim(aligned_reads[i])[,1]),collapse="")
+    
+    ref_length<-str_count(dir_ref_seq)
+    read_length<-str_count(read_cur)
     
     #Align midpoint of read to ref seq
-    mid_dig<-round(length(read_cur)/2,0)
-    mid_seq<-paste(read_cur[mid_dig:(mid_dig+10)],collapse="")
-    
-    #Get nucleotide of ref seq that aligns to midpoint of read
-    loc<-str_locate(dir_ref_seq,mid_seq)
-    start<-unname(loc[,1])
-    end<-unname(loc[,2])
-    
-    if(is.na(start)==FALSE&&is.na(end)==FALSE){
+    if(align_method_val=="Midpoint"){
       
-      aligned_successful<-"Y"
-      
-      if(length(read_cur)>str_count(dir_ref_seq)){
-        long_seq<-gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i])
-        short_seq<-gsub(paste(exp_dir,"/",sep=""),"",ref_seq)
-        short<-unlist(strsplit(dir_ref_seq,""))
-        long<-read_cur
-        seq_l<-length(read_cur)
-        m_disp<-(mid_dig-start)
-      } else{
-        long_seq<-gsub(paste(exp_dir,"/",sep=""),"",ref_seq)
-        short_seq<-gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i])
-        short<-read_cur
-        long<-unlist(strsplit(dir_ref_seq,""))
-        seq_l<-str_count(dir_ref_seq)
-        m_disp<-(start-mid_dig)
-      }
-      
-      #Create alignment
-      align_m<-matrix(nrow=3,ncol=seq_l)
-      rownames(align_m)<-c(long_seq,short_seq,"Aligned")
-      colnames(align_m)<-c(1:ncol(align_m))
-      align_m[1,]<-long
-      align_m[2,(m_disp+1):(length(short)+m_disp)]<-short
-      
-      #Identify misaligned nucleotides
-      misaligned<-lapply(1:seq_l,function(x){
-        
-        tmp<-align_m[,x]
-        tmp_rd<-unname(tmp[1])
-        tmp_ref<-unname(tmp[2])
-        if(tmp_rd==tmp_ref&&is.na(tmp_ref)==FALSE&&is.na(tmp_rd)==FALSE){
-          align_status<-"Y"
+        #Get shorter/longer sequence
+        if(read_length>ref_length){
+          .GlobalEnv$chosen_seq<-read_cur
+          .GlobalEnv$chosen_seq_name<-"Read"
+          
+          .GlobalEnv$others<-dir_ref_seq
+          .GlobalEnv$others_name<-"Reference"
         } else{
-          align_status<-"N"
+          .GlobalEnv$chosen_seq<-dir_ref_seq
+          .GlobalEnv$chosen_seq_name<-"Reference"
+          
+          .GlobalEnv$others<-read_cur
+          .GlobalEnv$others_name<-"Read"
         }
         
-        df<-data.frame(Nucleotide=x,
-                       Read=tmp_rd,
-                       Reference=tmp_ref,
-                       Aligned=align_status)
+        #Get 10 nucleotides from midpoint of shorter sequence
+        midpoint<-str_count(others)/2
+        nucs<-str_sub(others,start=midpoint,end=midpoint+9)
         
-      })
-      misaligned_df<-bind_rows(misaligned)
-      num_aligned<-length(which(misaligned_df$Aligned=="Y"))
-      total_num<-nrow(misaligned_df)
-      perc_aligned<-round((num_aligned/total_num)*100,1)
-      perc_aligned_short<-round((num_aligned/length(short))*100,1)
-      setwd(exp_dir)
-      write.csv(misaligned_df,paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),"_ALIGNMENT.csv",sep=""),row.names = FALSE)
+        #Align to other seq
+        chosen_loc<-str_locate(chosen_seq,nucs)[[1]]
+
+        #If alignment is successul
+        if(is.na(chosen_loc)==FALSE){
+          align_succcess<-"Y"
+          
+          shift<-abs(chosen_loc-midpoint)
+          
+          #Create alignment matrix from longer sequence
+          alignment_matrix<-matrix(nrow=3,ncol=str_count(chosen_seq))
+          colnames(alignment_matrix)<-c(1:ncol(alignment_matrix))
+          rownames(alignment_matrix)<-c(chosen_seq_name,others_name,"Alignment")
+          
+          alignment_matrix[1,]<-unlist(strsplit(chosen_seq,""))
+          alignment_matrix[2,(shift+1):(str_count(others)+shift)]<-unlist(strsplit(others,""))
+          
+          #Get alignments
+          aligned_status<-lapply(1:ncol(alignment_matrix),function(p){
+            sub_m<-alignment_matrix[,p]
+            if(is.na(sub_m[[2]])==TRUE){
+              aligned<-"NA"
+            } else if(is.na(sub_m[[2]])==FALSE&&sub_m[[2]]!=sub_m[[1]]){
+              aligned<-"N"
+            } else if(is.na(sub_m[[2]])==FALSE&&sub_m[[2]]==sub_m[[1]]){
+              aligned<-"Y"
+            }
+          })
+          aligned_status_cur<-unlist(aligned_status)
+          alignment_matrix[3,]<-aligned_status_cur
+          
+          #Generate aligment_df
+          .GlobalEnv$alignment_df<-data.frame(Nucleotide=1:ncol(alignment_matrix),
+                                   Align_Success=alignment_matrix[3,],
+                                   Seq=nucs)
+          
+          
+          #Calculate alignment success relative to shorter sequence
+          perc_aligned<-100*(length(which(alignment_matrix[3,]=="Y"))/str_count(others))
+          
+          #END IF ALIGNMENT SUCCESSFUL
+        } else{
+          align_succcess<-"N"
+          perc_aligned<-0
+          shift<-"NA"
+        }
+        
+      #Save output
+      results<-data.frame(Read=gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),
+                          Alignment_Success=align_succcess,
+                          Perc_Align=perc_aligned)
+      align_meta<-rbind(align_meta,results)
       
-      ggplot(misaligned_df,aes(x=as.numeric(Nucleotide),y=1))+
-        geom_point(size=3,col=ifelse(misaligned_df$Aligned=="Y","darkgreen","red"))+
-        geom_text(aes(x=as.numeric(min(Nucleotide)),y=1),label=paste("% Aligned (",long_seq, ") = ",perc_aligned,"%\n",num_aligned,"/",nrow(misaligned_df)," nucleotides","\n% Aligned (",short_seq,")= ",perc_aligned_short,"%\n",num_aligned,"/",length(short)," nucleotides",sep=""),hjust=0,vjust=-1)+
-        scale_x_continuous(n.breaks=10)+
-        xlab(paste("Nucleotide Position of ", long_seq,sep=""))+
-        ylab(paste("Alignment of ", long_seq,sep=""))+
-        theme_bw()+
-        theme(axis.text.y = element_blank(),
-              axis.ticks.y = element_blank(),
-              panel.grid.major = element_blank(),
-              panel.grid.minor=element_blank())+
-        ggtitle(paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i])," Alignment to Reference",sep=""))
-      setwd(exp_dir)
-      ggsave(paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),"_PLOT.png",sep=""),width=10,height=5)
+      if(align_succcess=="Y"){
+        
+        #Generate graph
+        best_df<-alignment_df
+        names(best_df)[2]<-"Aligned"
+        
+        num_aligned<-length(which(best_df$Aligned=="Y"))
+        perc_aligned_long<-round(100*num_aligned/str_count(chosen_seq),1)
+        perc_aligned_short<-round(100*num_aligned/str_count(others),1)
+        ggplot(best_df,aes(x=as.numeric(Nucleotide),y=1))+
+          geom_point(size=3,col=ifelse(best_df$Aligned=="Y","darkgreen","red"))+
+          geom_text(aes(x=as.numeric(min(Nucleotide)),y=1),label=paste("% Aligned (",chosen_seq_name, ") = ",perc_aligned_long,"%\n",num_aligned,"/",str_count(chosen_seq)," nucleotides","\n% Aligned (",others_name,")= ",perc_aligned_short,"%\n",num_aligned,"/",str_count(others)," nucleotides\nMETHOD=MIDPOINT",sep=""),hjust=0,vjust=-1)+
+          scale_x_continuous(n.breaks=10)+
+          xlab(paste("Nucleotide Position of ", chosen_seq_name,sep=""))+
+          ylab(paste("Alignment of ", chosen_seq_name,sep=""))+
+          theme_bw()+
+          theme(axis.text.y = element_blank(),
+                axis.ticks.y = element_blank(),
+                panel.grid.major = element_blank(),
+                panel.grid.minor=element_blank())+
+          ggtitle(paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i])," Alignment to Reference",sep=""))
+        setwd(exp_dir)
+        ggsave(paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),"_PLOT.png",sep=""),width=10,height=5)
+        
+      } else{
+        print(paste("No successful alignments for ",gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),sep=""))
+      }
       
-    } else{
-      aligned_successful<-"N"
-      perc_aligned<-"NA"
-      perc_aligned_short<-"NA"
-      #tk_messageBox(message=paste(gsub(paste(exp_dir,"/",sep=""),"",sel_reads[i]), " did not align!",sep=""))
+    } else if(align_method_val=="Random"){
+      
+      #Define parameters
+      all_alignments<-data.frame()
+      alignment_df_all<-data.frame()
+      for(q in 1:n_cross_vals){
+        set.seed(q)
+        
+        #Get shorter/longer sequence
+        if(read_length>ref_length){
+          seq_samps<-sample(1:(read_length-11),n_samples)
+          .GlobalEnv$chosen_seq<-read_cur
+          .GlobalEnv$chosen_seq_name<-"Read"
+          
+          .GlobalEnv$others<-dir_ref_seq
+          .GlobalEnv$others_name<-"Reference"
+        } else{
+          seq_samps<-sample(1:(ref_length-11),n_samples)
+          .GlobalEnv$chosen_seq<-dir_ref_seq
+          .GlobalEnv$chosen_seq_name<-"Reference"
+          
+          .GlobalEnv$others<-read_cur
+          .GlobalEnv$others_name<-"Read"
+        }
+        
+        #Get 10 nucleotides for each seq samp in list
+        seq_samp_df<-data.frame()
+        for(m in seq_samps){
+          #Get random 10 nucs in chosen seq
+          nucs<-str_sub(chosen_seq,start=m,end=m+9)
+          
+          #Align to other seq
+          others_loc<-str_locate(others,nucs)[[1]]
+          
+          #If alignment successful
+          if(is.na(others_loc)==FALSE){
+            align_succcess<-"Y"
+            
+            #Get shift to align shorter sequence
+            shift<-m-others_loc
+            
+            #Create alignment matrix from longer sequence
+            alignment_matrix<-matrix(nrow=3,ncol=str_count(chosen_seq))
+            colnames(alignment_matrix)<-c(1:ncol(alignment_matrix))
+            rownames(alignment_matrix)<-c(chosen_seq_name,others_name,"Alignment")
+            
+            alignment_matrix[1,]<-unlist(strsplit(chosen_seq,""))
+            alignment_matrix[2,(shift+1):(str_count(others)+shift)]<-unlist(strsplit(others,""))
+            
+            #Get alignments
+            aligned_status<-lapply(1:ncol(alignment_matrix),function(p){
+              sub_m<-alignment_matrix[,p]
+              if(is.na(sub_m[[2]])==TRUE){
+                aligned<-"NA"
+              } else if(is.na(sub_m[[2]])==FALSE&&sub_m[[2]]!=sub_m[[1]]){
+                aligned<-"N"
+              } else if(is.na(sub_m[[2]])==FALSE&&sub_m[[2]]==sub_m[[1]]){
+                aligned<-"Y"
+              }
+            })
+            aligned_status_cur<-unlist(aligned_status)
+            alignment_matrix[3,]<-aligned_status_cur
+            
+            #Generate aligment_df
+            alignment_df<-data.frame(Nucleotide=1:ncol(alignment_matrix),
+                                     Aligned=alignment_matrix[3,],
+                                     Seed=q,
+                                     Seq=nucs)
+            alignment_df_all<-rbind(alignment_df_all,alignment_df)
+            
+            #Calculate alignment success relative to shorter sequence
+            perc_aligned<-100*(length(which(alignment_matrix[3,]=="Y"))/str_count(others))
+            
+            #End if alignment successful
+          } else{
+            align_succcess<-"N"
+            perc_aligned<-0
+            shift<-"NA"
+          }
+          
+          #Format as df
+          seq_samp_df<-data.frame(Read=gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),
+                                  Nucleotide_Selected=m,
+                                  Sample_Sequence=nucs,
+                                  Align_Success=align_succcess,
+                                  Perc_Aligned=perc_aligned,
+                                  Seed=q,
+                                  Shift=shift)
+          
+          #End cycle thru random samples
+          all_alignments<-rbind(all_alignments,seq_samp_df)
+        }
+  
+      #End cross validations
+      }
+      .GlobalEnv$all_alignments<-all_alignments
+      .GlobalEnv$alignment_df_all<-alignment_df_all
+      
+      #------------------------------------
+      
+      #Remove duplicates
+      if(length(which(duplicated(all_alignments$Sample_Sequence)==TRUE))>0){
+        all_alignments<-all_alignments[-which(duplicated(all_alignments$Sample_Sequence)==TRUE),]
+      }
+      
+      #Rank alignments
+      .GlobalEnv$ranked_al<-all_alignments[order(all_alignments$Perc_Aligned,decreasing=TRUE),]
+      
+      #Obtain best alignment
+      best_al<-ranked_al[1,]
+      best_al$Unique_Alignments_Attempted<-nrow(ranked_al)
+      best_al$Perc_Successful_Alignments<-round(100*length(which(ranked_al$Align_Success=="Y"))/nrow(ranked_al),1)
+      .GlobalEnv$best_al<-best_al
+      
+      align_meta<-rbind(align_meta,best_al)
+      
+      if(align_succcess=="Y"){
+        
+        #Generate graph
+        best_df<-alignment_df_all[which(alignment_df_all$Seq==best_al$Sample_Sequence),]
+        num_aligned<-length(which(best_df$Aligned=="Y"))
+        perc_aligned_long<-round(100*num_aligned/str_count(chosen_seq),1)
+        perc_aligned_short<-round(100*num_aligned/str_count(others),1)
+        ggplot(best_df,aes(x=as.numeric(Nucleotide),y=1))+
+          geom_point(size=3,col=ifelse(best_df$Aligned=="Y","darkgreen","red"))+
+          geom_text(aes(x=as.numeric(min(Nucleotide)),y=1),label=paste("% Aligned (",chosen_seq_name, ") = ",perc_aligned_long,"%\n",num_aligned,"/",str_count(chosen_seq)," nucleotides","\n% Aligned (",others_name,")= ",perc_aligned_short,"%\n",num_aligned,"/",str_count(others)," nucleotides\nMETHOD=RANDOM",sep=""),hjust=0,vjust=-1)+
+          scale_x_continuous(n.breaks=10)+
+          xlab(paste("Nucleotide Position of ", chosen_seq_name,sep=""))+
+          ylab(paste("Alignment of ", chosen_seq_name,sep=""))+
+          theme_bw()+
+          theme(axis.text.y = element_blank(),
+                axis.ticks.y = element_blank(),
+                panel.grid.major = element_blank(),
+                panel.grid.minor=element_blank())+
+          ggtitle(paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i])," Alignment to Reference",sep=""))
+        setwd(exp_dir)
+        ggsave(paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),"_PLOT.png",sep=""),width=10,height=5)
+        
+      } else{
+        print(paste("No successful alignments for ",gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),sep=""))
+      }
+      
+      #End random option
     }
-    
-    tmp_meta<-data.frame(Sequence=gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),
-                         Alignment_Success=aligned_successful,
-                         Percent_Aligned_Long=perc_aligned,
-                         Percent_Aligned_Short=perc_aligned_short)
-    align_meta<-rbind(align_meta,tmp_meta)
+    #End cycle thru reads
   }
   
+  rownames(align_meta)<-NULL
   .GlobalEnv$align_meta<-align_meta
   setwd(exp_dir)
   write.csv(align_meta,"ALIGNMENT_METADATA.csv",row.names = FALSE)
@@ -346,7 +515,7 @@ get_alignment<-function(){
 }
 
 gui<-tktoplevel()
-tkwm.geometry(gui,"300x360")
+tkwm.geometry(gui,"300x380")
 tkwm.title(gui,"SeqAlign Super Pro 2000")
 frm<-tkframe(gui)
 tkgrid(frm,padx=30)
@@ -366,9 +535,14 @@ sel_reads_var<-tkbutton(frm,text="Select reads to be aligned (FASTA)",command=se
 tkgrid(sel_reads_var,row=6,column=1,pady=5,columnspan=2)
 sel_reads_dis<-tklabel(frm,text="\n\n\n")
 tkgrid(sel_reads_dis,row=7,column=1,pady=5,columnspan=2)
+sel_align_method<-tklabel(frm,text="Alignment method:")
+tkgrid(sel_align_method,row=8,column=1,pady=0)
+align_method<-ttkcombobox(frm,values=c("Midpoint","Random"),width=12,textvariable=align_method_var)
+tkgrid(align_method,row=8,column=2,pady=0)
 align_reads<-tkbutton(frm,text="Align reads",state="disabled",command=align_fun)
-tkgrid(align_reads,row=8,column=1,pady=5,columnspan=2)
+tkgrid(align_reads,row=9,column=1,pady=5,columnspan=2)
 skip_sub<-tkcheckbutton(frm,text="Skip RSubread alignment?",variable=skip_subread,state="disabled")
-tkgrid(skip_sub,row=9,column=1,pady=5,columnspan=2)
+tkgrid(skip_sub,row=10,column=1,pady=5,columnspan=2)
+
 
 tkwait.window(gui)
