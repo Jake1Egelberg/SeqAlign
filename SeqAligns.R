@@ -78,7 +78,7 @@ align_fun<-function(){
   
     prog_inc<-100/(length(sel_reads)+1)
     prog_val<-0
-    prog<-winProgressBar(title="SeqAlign Super Pro 9000",
+    .GlobalEnv$prog<-winProgressBar(title="SeqAlign Super Pro 9000",
                          label=paste("Aligning...", sep=""),
                          min=0,max=100,width=300,initial=prog_val)
     
@@ -115,7 +115,6 @@ align_fun<-function(){
     }
 
     #Generate plots
-    setWinProgressBar(prog,value=90,label="Generating alignment metadata...")
     get_alignment()
     
     close(prog)
@@ -249,7 +248,13 @@ get_alignment<-function(){
   .GlobalEnv$align_method_val<-tclvalue(align_method_var)
   
   align_meta<-data.frame()
+  value_inc<-(100-50)/length(aligned_reads)
+  value<-50
   for(i in 1:length(aligned_reads)){
+    #Update prog bar
+    value<-value+value_inc
+    setWinProgressBar(prog,value=value,label=paste("Manually aligning ",gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),sep=""))
+    
     
     dir_ref_seq<-toupper(paste(read.delim(ref_seq)[,1],collapse=""))
     read_cur<-paste(toupper(read.delim(aligned_reads[i])[,1]),collapse="")
@@ -309,10 +314,13 @@ get_alignment<-function(){
           })
           aligned_status_cur<-unlist(aligned_status)
           alignment_matrix[3,]<-aligned_status_cur
+          alignment_matrix<-alignment_matrix
           
           #Generate aligment_df
-          .GlobalEnv$alignment_df<-data.frame(Nucleotide=1:ncol(alignment_matrix),
+          alignment_df<-data.frame(Nucleotide=1:ncol(alignment_matrix),
                                    Align_Success=alignment_matrix[3,],
+                                   Long=alignment_matrix[1,],
+                                   Short=alignment_matrix[2,],
                                    Seq=nucs)
           
           
@@ -355,6 +363,54 @@ get_alignment<-function(){
           ggtitle(paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i])," Alignment to Reference",sep=""))
         setwd(exp_dir)
         ggsave(paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),"_PLOT.png",sep=""),width=10,height=5)
+        
+        #Split aligned into groups
+        only_aligned<-best_df
+        tides_per_group<-150
+        group_num<-floor(nrow(only_aligned)/tides_per_group)
+        only_aligned$Group<-NA
+        only_aligned$Group_X<-NA
+        labs<-c()
+        group_x<-c()
+        for(q in 1:group_num){
+          group_labs<-((tides_per_group)*rep(q,tides_per_group))
+          labs<-c(labs,group_labs)
+          group_x<-c(group_x,1:tides_per_group)
+        }
+        only_aligned$Group[1:length(labs)]<-labs
+        only_aligned[which(is.na(only_aligned$Group)),]$Group<-(max(labs)+tides_per_group)
+        only_aligned$Group<-as.factor(only_aligned$Group)
+        
+        only_aligned$Group_X[1:length(group_x)]<-group_x
+        only_aligned[which(is.na(only_aligned$Group_X)),]$Group_X<-1:length(which(is.na(only_aligned$Group_X)))
+        
+        .GlobalEnv$only_aligned<-only_aligned
+        
+        #Actual nucleotide alignment
+        ggplot(data=only_aligned,aes(x=as.numeric(Group_X),y=1,col=Long))+
+          geom_text(aes(label=Long,
+                        family=ifelse(Aligned=="Y","sans","mono")),size=5,position=position_jitter(height=0.1,width=0))+
+          xlab("")+
+          ylab("")+
+          scale_color_discrete(guide="none")+
+          scale_x_continuous(n.breaks=10)+
+          scale_y_continuous(limits=c(0,2))+
+          scale_size_continuous(guide="none")+
+          facet_grid(rows=vars(Group))+
+          theme_bw()+
+          ggtitle(paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i])," Alignment",sep=""))+
+          theme(axis.text.y = element_blank(),
+                axis.ticks.y = element_blank(),
+                axis.text.x = element_blank(),
+                axis.ticks.x = element_blank(),
+                panel.grid.major = element_blank(),
+                panel.grid.minor = element_blank(),
+                panel.border=element_blank(),
+                strip.background = element_blank())
+        setwd(exp_dir)
+        ggsave(paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),"_RAWALIGNMENT.png",sep=""),width=18,height=group_num)
+        
+        
         
       } else{
         print(paste("No successful alignments for ",gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),sep=""))
@@ -426,6 +482,8 @@ get_alignment<-function(){
             #Generate aligment_df
             alignment_df<-data.frame(Nucleotide=1:ncol(alignment_matrix),
                                      Aligned=alignment_matrix[3,],
+                                     Long=alignment_matrix[1,],
+                                     Short=alignment_matrix[1,],
                                      Seed=q,
                                      Seq=nucs)
             alignment_df_all<-rbind(alignment_df_all,alignment_df)
@@ -497,6 +555,54 @@ get_alignment<-function(){
           ggtitle(paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i])," Alignment to Reference",sep=""))
         setwd(exp_dir)
         ggsave(paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),"_PLOT.png",sep=""),width=10,height=5)
+        
+        #Split aligned into groups
+        only_aligned<-best_df
+        tides_per_group<-150
+        group_num<-floor(nrow(only_aligned)/tides_per_group)
+        only_aligned$Group<-NA
+        only_aligned$Group_X<-NA
+        labs<-c()
+        group_x<-c()
+        for(q in 1:group_num){
+          group_labs<-((tides_per_group)*rep(q,tides_per_group))
+          labs<-c(labs,group_labs)
+          group_x<-c(group_x,1:tides_per_group)
+        }
+        only_aligned$Group[1:length(labs)]<-labs
+        only_aligned[which(is.na(only_aligned$Group)),]$Group<-(max(labs)+tides_per_group)
+        only_aligned$Group<-as.factor(only_aligned$Group)
+        
+        only_aligned$Group_X[1:length(group_x)]<-group_x
+        only_aligned[which(is.na(only_aligned$Group_X)),]$Group_X<-1:length(which(is.na(only_aligned$Group_X)))
+        
+        .GlobalEnv$only_aligned<-only_aligned
+        
+        #Actual nucleotide alignment
+        ggplot(data=only_aligned,aes(x=as.numeric(Group_X),y=1,col=Long))+
+          geom_text(aes(label=Long,
+                        family=ifelse(Aligned=="Y","sans","mono")),size=5,position=position_jitter(height=0.1,width=0))+
+          xlab("")+
+          ylab("")+
+          scale_color_discrete(guide="none")+
+          scale_x_continuous(n.breaks=10)+
+          scale_y_continuous(limits=c(0,2))+
+          scale_size_continuous(guide="none")+
+          facet_grid(rows=vars(Group))+
+          theme_bw()+
+          ggtitle(paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i])," Alignment",sep=""))+
+          theme(axis.text.y = element_blank(),
+                axis.ticks.y = element_blank(),
+                axis.text.x = element_blank(),
+                axis.ticks.x = element_blank(),
+                panel.grid.major = element_blank(),
+                panel.grid.minor = element_blank(),
+                panel.border=element_blank(),
+                strip.background = element_blank())
+        setwd(exp_dir)
+        ggsave(paste(gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),"_RAWALIGNMENT.png",sep=""),width=18,height=group_num)
+        
+        
         
       } else{
         print(paste("No successful alignments for ",gsub(paste(exp_dir,"/",sep=""),"",aligned_reads[i]),sep=""))
